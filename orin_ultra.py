@@ -1,3 +1,9 @@
+# 설치
+# sudo pip3 install Jetson.GPIO
+# sudo groupadd -f -r gpio
+# sudo usermod -a -G gpio $USER
+# # 재로그인 또는 재부팅
+
 import Jetson.GPIO as GPIO
 import time
 
