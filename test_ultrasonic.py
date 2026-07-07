@@ -2,8 +2,8 @@
 # cd ~/yahboomcar_ros2_ws/yahboomcar_ws/src/auto_drive/test
 # python3 test_ultrasonic.py
 
-권한 오류나오면
-sudo python3 test_ultrasonic.py
+# 권한 오류나오면
+# sudo python3 test_ultrasonic.py
 
 
 #!/usr/bin/env python3
