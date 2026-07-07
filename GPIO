@@ -1,0 +1,106 @@
+1단계. GPIO 라이브러리 확인
+
+  먼저 Jetson.GPIO가 설치되어 있는지 확인합니다.
+  
+  python3 -c "import Jetson.GPIO as GPIO; print(GPIO.VERSION)"
+
+  버전이 출력되면 설치된 것입니다.
+
+오류가 나오면 설치합니다.
+
+  sudo apt update
+  sudo apt install python3-pip
+  pip3 install Jetson.GPIO
+
+2단계. GPIO 핀 선택
+
+  현재 OLED가 I2C를 사용 중이라면 다음 핀은 그대로 둡니다.
+  1번 : 3.3V  
+  3번 : SDA 
+  5번 : SCL 
+  9번 : GND
+
+HC-SR04는 다음처럼 연결하는 것을 권장합니다.
+
+  HC-SR04	Jetson
+  VCC	2번(5V)
+  GND	6번(GND)
+  TRIG	13번
+  ECHO	15번(전압분배기 필수)
+
+
+3단계. 배선
+          Jetson Orin Nano
+      2 (5V)  ----------------- VCC
+      6 (GND) ----------------- GND
+     13 (GPIO) ---------------- TRIG
+                           1kΩ
+      ECHO -----/\/\/\-----+---------- 15(GPIO)
+                           |
+                         /\/\/\
+                          2kΩ
+                           |
+                          GND
+
+  이 배선은 HC-SR04를 Jetson에 연결할 때 가장 많이 사용하는 방식입니다.
+
+
+4단계. GPIO 출력 테스트
+
+  먼저 초음파 센서를 연결하지 말고 LED 하나로 테스트하는 것이 좋습니다.
+
+  import Jetson.GPIO as GPIO
+  import time
+  
+  GPIO.setmode(GPIO.BOARD)
+  
+  LED = 13
+  
+  GPIO.setup(LED, GPIO.OUT)
+  
+  while True:
+      GPIO.output(LED, GPIO.HIGH)
+      time.sleep(1)
+  
+      GPIO.output(LED, GPIO.LOW)
+      time.sleep(1)
+
+  LED가 1초마다 깜박이면 출력은 정상입니다.
+
+5단계. GPIO 입력 테스트
+
+  버튼을 하나 연결해서 입력이 정상인지 확인합니다.
+  
+  import Jetson.GPIO as GPIO
+  
+  GPIO.setmode(GPIO.BOARD)
+  
+  BUTTON = 15
+  
+  GPIO.setup(BUTTON, GPIO.IN)
+  
+  while True:
+      print(GPIO.input(BUTTON))
+
+  0과 1이 바뀌면 입력도 정상입니다.
+
+6단계. HC-SR04 연결
+  
+  GPIO 출력과 입력이 정상이라면 센서를 연결합니다.
+  
+  TRIG는 출력
+  
+  ECHO는 입력
+  
+  으로 설정합니다.
+
+7단계. HC-SR04 코드
+
+  이때는 GPIO.BOARD 모드를 사용하는 것이 Jetson에서 혼동이 적습니다.
+
+GPIO.setmode(GPIO.BOARD)
+
+TRIG = 13
+ECHO = 15
+
+이후 거리 측정 프로그램을 작성합니다.
