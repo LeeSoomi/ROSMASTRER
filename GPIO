@@ -49,22 +49,31 @@ HC-SR04는 다음처럼 연결하는 것을 권장합니다.
 
   먼저 초음파 센서를 연결하지 말고 LED 하나로 테스트하는 것이 좋습니다.
 
-  import Jetson.GPIO as GPIO
-  import time
-  
-  GPIO.setmode(GPIO.BOARD)
-  
-  LED = 13
-  
-  GPIO.setup(LED, GPIO.OUT)
-  
-  while True:
-      GPIO.output(LED, GPIO.HIGH)
-      time.sleep(1)
-  
-      GPIO.output(LED, GPIO.LOW)
-      time.sleep(1)
+import Jetson.GPIO as GPIO
+import time
 
+GPIO.setwarnings(False)
+
+GPIO.setmode(GPIO.BOARD)
+
+LED = 13
+
+GPIO.setup(LED, GPIO.OUT, initial=GPIO.LOW)
+
+print("START")
+
+try:
+    while True:
+        print("HIGH")
+        GPIO.output(LED, GPIO.HIGH)
+        time.sleep(1)
+
+        print("LOW")
+        GPIO.output(LED, GPIO.LOW)
+        time.sleep(1)
+
+finally:
+    GPIO.cleanup()
   LED가 1초마다 깜박이면 출력은 정상입니다.
 
 5단계. GPIO 입력 테스트
