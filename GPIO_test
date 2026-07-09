@@ -1,137 +1,143 @@
-1단계. GPIO 라이브러리 확인
+# Pinmux는 쉽게 말하면 한 핀이 어떤 역할을 할지 정해주는 설정입니다.
 
-  먼저 Jetson.GPIO가 설치되어 있는지 확인합니다.
-  
-  python3 -c "import Jetson.GPIO as GPIO; print(GPIO.VERSION)"
+# Jetson의 40핀 헤더에 있는 핀 하나는 항상 GPIO만 하는 게 아닙니다. 
+# 같은 물리 핀이 상황에 따라 GPIO, SPI, I2C, UART, PWM 같은 역할 중 하나로 동작할 수 있습니다.
 
-  버전이 출력되면 설치된 것입니다.
+# 예를 들어 어떤 핀이 겉으로는 31번 핀 하나처럼 보이지만 내부적으로는 이렇게 선택될 수 있습니다.
 
-오류가 나오면 설치합니다.
+# 31번 핀
+# → GPIO 출력
+# → CAN 기능
+# → 다른 특수 기능
 
-  sudo apt update
-  sudo apt install python3-pip
-  pip3 install Jetson.GPIO
+# 여기서 “이 핀을 GPIO 출력으로 쓰겠다”라고 정해주는 설정이 pinmux입니다.
 
-2단계. GPIO 핀 선택
+# 이번에 LED가 안 켜진 이유도 코드에서는 GPIO.output(HIGH)를 했지만, 
+# 실제 핀 설정이 GPIO 출력용으로 제대로 열려 있지 않아서 신호가 밖으로 나오지 않았던 것입니다.
 
-  현재 OLED가 I2C를 사용 중이라면 다음 핀은 그대로 둡니다.
-  1번 : 3.3V  
-  3번 : SDA 
-  5번 : SCL 
-  9번 : GND
+# devmem 명령은 그 pinmux 설정 레지스터를 임시로 직접 바꾼 것입니다.
 
-HC-SR04는 다음처럼 연결하는 것을 권장합니다.
+# sudo busybox devmem 0x02430070 w 0x004
 
-  HC-SR04	Jetson
-  VCC	2번(5V)
-  GND	6번(GND)
-  TRIG	13번
-  ECHO	15번(전압분배기 필수)
+# 이 명령의 의미는 대략 “31번 핀을 GPIO 출력으로 쓸 수 있게 내부 설정을 바꿔라”입니다.
+
+# 정리하면, 
+# GPIO 코드는 “불을 켜라”라는 명령이고, 
+# pinmux는 “이 스위치가 실제 LED 선에 연결되어 있는지”를 정하는 설정입니다. 
+# 스위치가 다른 기능에 연결되어 있으면 코드는 정상이어도 LED가 안 켜진다.
 
 
-3단계. 배선
-          Jetson Orin Nano
-      2 (5V)  ----------------- VCC
-      6 (GND) ----------------- GND
-     13 (GPIO) ---------------- TRIG
-                           1kΩ
-      ECHO -----/\/\/\-----+---------- 15(GPIO)
-                           |
-                         /\/\/\
-                          2kΩ
-                           |
-                          GND
+TRIG = BOARD 31
+ECHO = BOARD 15
 
-  이 배선은 HC-SR04를 Jetson에 연결할 때 가장 많이 사용하는 방식입니다.
+HC-SR04 VCC  → Jetson 5V
+HC-SR04 GND  → Jetson GND
+HC-SR04 TRIG → Jetson 31번
 
+HC-SR04 ECHO → 1kΩ → 분기점 → Jetson 15번
+                      분기점 → 2kΩ → GND
 
-4단계. GPIO 출력 테스트
+31번 핀은 busybox devmem으로 GPIO 기능을 자동 활성화한다.
+15번 ECHO 핀은 우선 기본 입력 상태로 사용한다.
+거리 측정이 실패하면 15번 Pinmux도 추가 확인한다.
+>>>>>>>>>>>>>
 
-TRIG에 쓰려는 핀에 LED + 220Ω 저항을 물리고:
+1. 자동 실행 스크립스 만들기
+sudo nano /usr/local/bin/gpio_pinmux_setup.sh
 
-pythonimport Jetson.GPIO as GPIO
+>> 아래 내용 추가
+#!/bin/bash
+
+# Jetson Orin Nano / Yahboom GPIO output repair
+# BOARD pin 31 output enable
+/usr/bin/busybox devmem 0x02430070 w 0x004
+
+저장 후 권한을 줍니다.
+sudo chmod +x /usr/local/bin/gpio_pinmux_setup.sh
+
+2. systemd 서비스 만들기
+sudo nano /etc/systemd/system/gpio-pinmux.service
+
+>> 아래 내용 추가
+[Unit]
+Description=GPIO Pinmux Setup for Jetson Orin Nano
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/gpio_pinmux_setup.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+
+3. 서비스 등록 및 실행
+sudo systemctl daemon-reload
+sudo systemctl enable gpio-pinmux.service
+sudo systemctl start gpio-pinmux.service
+
+4. 실행확인
+systemctl status gpio-pinmux.service
+>> active (exited)가 보이면 정상
+
+5. 재부팅 후 확인
+sudo reboot
+
+6. 재부팅 후 바로 LED 또는 초음파 코드를 실행
+sudo python3 ~/ultrasonic_test.py
+==============
+코드는 아래
+=============
+import Jetson.GPIO as GPIO
 import time
 
-GPIO.setmode(GPIO.BOARD)   # 물리적 핀 번호 기준
-TRIG = 13                  # 실제 배선한 핀으로 수정
-
-GPIO.setup(TRIG, GPIO.OUT, initial=GPIO.LOW)
-try:
-    while True:
-        GPIO.output(TRIG, GPIO.HIGH); time.sleep(0.5)
-        GPIO.output(TRIG, GPIO.LOW);  time.sleep(0.5)
-except KeyboardInterrupt:
-    pass
-finally:
-    GPIO.cleanup()
-  LED가 깜박이면 출력은 정상입니다.
-
-5단계. GPIO 입력 테스트
-
-  버튼을 하나 연결해서 입력이 정상인지 확인합니다.
-  
-  import Jetson.GPIO as GPIO
-  
-  GPIO.setmode(GPIO.BOARD)
-  
-  BUTTON = 15
-  
-  GPIO.setup(BUTTON, GPIO.IN)
-  
-  while True:
-      print(GPIO.input(BUTTON))
-
-  0과 1이 바뀌면 입력도 정상입니다.
-
-6단계. HC-SR04 연결
-  
-  GPIO 출력과 입력이 정상이라면 센서를 연결합니다.
-  
-  TRIG는 출력
-  
-  ECHO는 입력
-  
-  으로 설정합니다.
-
-7단계. HC-SR04 코드
-
-  이때는 GPIO.BOARD 모드를 사용하는 것이 Jetson에서 혼동이 적습니다.
-
+GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BOARD)
 
-TRIG = 13
+TRIG = 31
 ECHO = 15
 
-이후 거리 측정 프로그램을 작성합니다.
+GPIO.setup(TRIG, GPIO.OUT, initial=GPIO.LOW)
+GPIO.setup(ECHO, GPIO.IN)
 
-======================================
+time.sleep(1)
 
-1번에서 오류시
+def measure_distance():
+    GPIO.output(TRIG, GPIO.LOW)
+    time.sleep(0.000002)
 
-Jetson.GPIO 2.1.7이 설치되어 있지만, 
-JetPack 6.x 또는 Orin Nano Super 계열에서 /proc/device-tree/compatible 값이 라이브러리 목록에 없으면 이런 오류가 날 수 있습니다. 
-NVIDIA GitHub 이슈에도 같은 증상이 보고되어 있습니다.
+    GPIO.output(TRIG, GPIO.HIGH)
+    time.sleep(0.00001)
+    GPIO.output(TRIG, GPIO.LOW)
 
-먼저 아래 명령부터 실행해 주세요.
-  cat /proc/device-tree/compatible
+    timeout = time.time() + 0.03
+    while GPIO.input(ECHO) == 0:
+        start = time.time()
+        if time.time() > timeout:
+            return None
 
-아마 출력 중에 nvidia,p3768-0000+p3767-0005-super 같은 값이 나올 가능성이 있습니다. 
-실제로 이 값을 Jetson.GPIO의 보드 목록에 추가해서 해결했다는 사례가 있습니다.
+    timeout = time.time() + 0.03
+    while GPIO.input(ECHO) == 1:
+        end = time.time()
+        if time.time() > timeout:
+            return None
 
-그다음 이 파일을 엽니다.
+    duration = end - start
+    distance = duration * 34300 / 2
+    return round(distance, 2)
 
-  sudo nano /usr/lib/python3/dist-packages/Jetson/GPIO/gpio_pin_data.py
+try:
+    while True:
+        dist = measure_distance()
+        if dist is None:
+            print("측정 실패")
+        else:
+            print(f"거리: {dist} cm")
+        time.sleep(0.5)
 
-파일 안에서 아래 이름을 찾습니다.
+finally:
+    GPIO.cleanup()
 
-  compats_jetson_orins_nano
+=============================
 
-그 괄호 안에 아래 줄을 추가합니다.
 
-  "nvidia,p3768-0000+p3767-0005-super",
-
-저장 후 다시 실행합니다.
-
-  python3 -c "import Jetson.GPIO as GPIO; print(GPIO.VERSION)"
-
-정상이라면 2.1.7이 출력됩니다.
