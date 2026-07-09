@@ -83,20 +83,15 @@ sudo python3 ultrasonic_node.py
 다른 터미널에서 확인
 ros2 topic echo /ultrasonic_distance
 
-2. auto_drive.py에 초음파 구독 추가
+2. 먼저 초음파 노드는 따로 실행합니다.
 
-파일을 백업합니다.
-cp ~/yahboomcar_ros2_ws/yahboomcar_ws/src/auto_drive/auto_drive/auto_drive.py \
-~/yahboomcar_ros2_ws/yahboomcar_ws/src/auto_drive/auto_drive/auto_drive_backup.py
+sudo python3 ~/yahboomcar_ros2_ws/yahboomcar_ws/src/auto_drive/test/ultrasonic_node.py
+그다음 auto_drive.py에서 /ultrasonic_distance를 구독하게 만듭니다.
 
-수정 파일을 엽니다.
-nano ~/yahboomcar_ros2_ws/yahboomcar_ws/src/auto_drive/auto_drive/auto_drive.py
-
-상단 import에 추가.
+--상단 import 부분에 추가합니다.
 from std_msgs.msg import Float32
 
-
-__init__ 안에 추가.
+--__init__ 안에 추가합니다.
 self.ultrasonic_distance = -1.0
 self.obstacle_stop_distance = 20.0
 self.obstacle_detected = False
@@ -108,7 +103,8 @@ self.create_subscription(
     10
 )
 
-클래스 안에 함수 추가
+--클래스 내부에 함수 하나를 추가합니다.
+
 def ultrasonic_callback(self, msg):
     self.ultrasonic_distance = msg.data
 
@@ -117,13 +113,8 @@ def ultrasonic_callback(self, msg):
     else:
         self.obstacle_detected = False
 
-3. 차선 주행 명령보다 먼저 정지 조건 넣기
-
-자료상 차선 유지 처리는 __handle_lane_detect_result()에서 하고, 
-그 안에서 __set_current_speed()로 속도와 각속도를 넣는다. 
-여기에 초음파 우선 정지 조건을 넣으면 된다.
-
-__handle_lane_detect_result() 함수 안에서 차선 계산 후 속도 명령이 나오기 전에 아래 코드를 넣는다.
+-- __handle_lane_detect_result() 함수 안에서, 
+if self.turn_action_active:보다 앞쪽에 아래 코드를 넣는다.
 
 if self.obstacle_detected:
     self.__set_current_speed(linear_x=0.0, angular_z=0.0)
@@ -138,14 +129,14 @@ if self.obstacle_detected:
     )
     return frame
 
-4. 실행순서
+넣는 위치는
+else:
+    self.lane_detect.prev_center = None
 
-터미널 1
-sudo python3 ~/yahboomcar_ros2_ws/yahboomcar_ws/src/auto_drive/test/ultrasonic_node.py
+# 여기에 초음파 정지 코드 추가
 
-터미널 2
-ros2 launch auto_drive auto_drive_bringup.launch.py
+if self.turn_action_active:
+    return frame
 
->>>>>>>>>
-기존 표지판 인식과 차선 유지는 그대로 작동하고, 
-초음파가 20cm 이하를 감지하면 차량이 정지하는 구조
+>>>>>>  차선 유지와 표지판 인식은 그대로 유지하면서, 
+초음파가 20cm 이하 장애물을 감지하면 우선 정지
