@@ -47,34 +47,24 @@ HC-SR04는 다음처럼 연결하는 것을 권장합니다.
 
 4단계. GPIO 출력 테스트
 
-  먼저 초음파 센서를 연결하지 말고 LED 하나로 테스트하는 것이 좋습니다.
+TRIG에 쓰려는 핀에 LED + 220Ω 저항을 물리고:
 
-import Jetson.GPIO as GPIO
+pythonimport Jetson.GPIO as GPIO
 import time
 
-GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BOARD)   # 물리적 핀 번호 기준
+TRIG = 13                  # 실제 배선한 핀으로 수정
 
-GPIO.setmode(GPIO.BOARD)
-
-LED = 13
-
-GPIO.setup(LED, GPIO.OUT, initial=GPIO.LOW)
-
-print("START")
-
+GPIO.setup(TRIG, GPIO.OUT, initial=GPIO.LOW)
 try:
     while True:
-        print("HIGH")
-        GPIO.output(LED, GPIO.HIGH)
-        time.sleep(1)
-
-        print("LOW")
-        GPIO.output(LED, GPIO.LOW)
-        time.sleep(1)
-
+        GPIO.output(TRIG, GPIO.HIGH); time.sleep(0.5)
+        GPIO.output(TRIG, GPIO.LOW);  time.sleep(0.5)
+except KeyboardInterrupt:
+    pass
 finally:
     GPIO.cleanup()
-  LED가 1초마다 깜박이면 출력은 정상입니다.
+  LED가 깜박이면 출력은 정상입니다.
 
 5단계. GPIO 입력 테스트
 
