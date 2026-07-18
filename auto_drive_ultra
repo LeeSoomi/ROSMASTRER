@@ -1,142 +1,62 @@
-초음파를 별도 ROS2 노드로 만들고, 
-auto_drive.py가 그 값을 받아서 정지 조건으로 쓰는 방식으로 진행하면 된다.
-auto_drive.py가 실제 주행 명령을 내리는 파일이고, 
-차선 유지 중 __set_current_speed()로 속도와 방향을 결정하는 구조라 
-여기에 초음파 정지 조건을 넣는다.
+1. 실행 중인 노드 모두 종료
+    각 터미널에서
+    Ctrl + C 로 종료
 
-진행순서
-1. 초음파 ROS2 노드 만들기
-cd ~/yahboomcar_ros2_ws/yahboomcar_ws/src/auto_drive/test
-nano ultrasonic_node.py
-==============
-내용은 ultrasonic_test.py를 ROS2 토픽 발행 형태로 바꾼다.
-==============
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import Float32
-import Jetson.GPIO as GPIO
-import time
+2. 새 터미널 열기
+    작업공간으로 이동
+    cd ~/yahboomcar_ros2_ws/yahboomcar_ws
 
-TRIG = 31
-ECHO = 15
+3. ROS 환경 설정
+    source /opt/ros/humble/setup.bash
+    source install/setup.bash
 
-class UltrasonicNode(Node):
-    def __init__(self):
-        super().__init__('ultrasonic_node')
-        self.pub = self.create_publisher(Float32, '/ultrasonic_distance', 10)
+4. 초음파 노드 실행
+    새 터미널
+    ros2 run auto_drive ultrasonic_node
+    
+    거리가 출력되는지 확인
+    예) Distance : 16.6 cm
 
-        GPIO.setwarnings(False)
-        GPIO.setmode(GPIO.BOARD)
-        GPIO.setup(TRIG, GPIO.OUT, initial=GPIO.LOW)
-        GPIO.setup(ECHO, GPIO.IN)
+5. 자율주행 실행
+    또 다른 새 터미널
+    cd ~/yahboomcar_ros2_ws/yahboomcar_ws
+    
+    source /opt/ros/humble/setup.bash
+    source install/setup.bash
+    
+    ros2 launch auto_drive auto_drive_bringup.launch.py
 
-        self.timer = self.create_timer(0.2, self.timer_callback)
 
-    def measure_distance(self):
-        GPIO.output(TRIG, GPIO.LOW)
-        time.sleep(0.000002)
+6. 확인
+    터미널에
+    Ultrasonic : 16.6 cm 가 계속 출력되면 Subscriber도 정상
 
-        GPIO.output(TRIG, GPIO.HIGH)
-        time.sleep(0.00001)
-        GPIO.output(TRIG, GPIO.LOW)
 
-        timeout = time.time() + 0.03
-        while GPIO.input(ECHO) == 0:
-            start = time.time()
-            if time.time() > timeout:
-                return -1.0
+***  만약 코드를 수정했다면
 
-        timeout = time.time() + 0.03
-        while GPIO.input(ECHO) == 1:
-            end = time.time()
-            if time.time() > timeout:
-                return -1.0
+    수정 후에는 항상
+    cd ~/yahboomcar_ros2_ws/yahboomcar_ws
+    colcon build --packages-select auto_drive
+    source install/setup.bash
+    를 먼저 실행한 후,
+    
+    ros2 run auto_drive ultrasonic_node
+    또는
+    ros2 launch auto_drive auto_drive_bringup.launch.py
+    를 실행
 
-        distance = (end - start) * 34300 / 2
-        return float(round(distance, 2))
 
-    def timer_callback(self):
-        msg = Float32()
-        msg.data = self.measure_distance()
-        self.pub.publish(msg)
-        self.get_logger().info(f'ultrasonic: {msg.data} cm')
-
-    def destroy_node(self):
-        GPIO.cleanup()
-        super().destroy_node()
-
-def main():
-    rclpy.init()
-    node = UltrasonicNode()
-    try:
-        rclpy.spin(node)
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
-
-if __name__ == '__main__':
-    main()
-=========================
-실행 테스트
-sudo python3 ultrasonic_node.py
-
-다른 터미널에서 확인
-ros2 topic echo /ultrasonic_distance
-
-2. 먼저 초음파 노드는 따로 실행합니다.
-
-sudo python3 ~/yahboomcar_ros2_ws/yahboomcar_ws/src/auto_drive/test/ultrasonic_node.py
-그다음 auto_drive.py에서 /ultrasonic_distance를 구독하게 만듭니다.
-
---상단 import 부분에 추가합니다.
-from std_msgs.msg import Float32
-
---__init__ 안에 추가합니다.
-self.ultrasonic_distance = -1.0
-self.obstacle_stop_distance = 20.0
-self.obstacle_detected = False
-
-self.create_subscription(
-    Float32,
-    '/ultrasonic_distance',
-    self.ultrasonic_callback,
-    10
-)
-
---클래스 내부에 함수 하나를 추가합니다.
-
-def ultrasonic_callback(self, msg):
-    self.ultrasonic_distance = msg.data
-
-    if 0 < self.ultrasonic_distance <= self.obstacle_stop_distance:
-        self.obstacle_detected = True
-    else:
-        self.obstacle_detected = False
-
--- __handle_lane_detect_result() 함수 안에서, 
-if self.turn_action_active:보다 앞쪽에 아래 코드를 넣는다.
-
-if self.obstacle_detected:
-    self.__set_current_speed(linear_x=0.0, angular_z=0.0)
-    cv2.putText(
-        frame,
-        f"Obstacle: {self.ultrasonic_distance:.1f} cm",
-        (10, 120),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.8,
-        (0, 0, 255),
-        2
-    )
-    return frame
-
-넣는 위치는
-else:
-    self.lane_detect.prev_center = None
-
-# 여기에 초음파 정지 코드 추가
-
-if self.turn_action_active:
-    return frame
-
->>>>>>  차선 유지와 표지판 인식은 그대로 유지하면서, 
-초음파가 20cm 이하 장애물을 감지하면 우선 정지
+** 전체 순서
+코드 수정
+      ↓
+colcon build
+      ↓
+source install/setup.bash
+      ↓
+ros2 run auto_drive ultrasonic_node
+      ↓
+새 터미널
+      ↓
+source install/setup.bash
+      ↓
+ros2 launch auto_drive auto_drive_bringup.launch.py
